@@ -78,22 +78,12 @@ function arrayEquals(a, b) {
   return true;
 }
 
-window.requestAnimationFrame = (function(origFn) {
-  return function(fn) {
-    return origFn.call(this, (time) => {
-      const info = getAndResetRedundantCallInfo();
-      console.log('rc:', info.setVertexBuffer + info.setIndexBuffer + info.setBindGroup, JSON.stringify(info));
-      fn(time);
-    });
-  };
-})(window.requestAnimationFrame);
-
 GPUCommandEncoder.prototype.beginRenderPass = (function(origFn) {
   return function(...args) {
     const pass = origFn.call(this, ...args);
     // TODO: We should try to set viewport and scissor from colorAttachments/depthStencilAttachment
     // but those only have textureViews and so we'd need to keep a map of views to textures.
-    // I expect viewports and scissor are not set often so this seems overkill.
+    // I expect viewport and scissor are not set often so this seems overkill.
     renderPassToStateMap.set(pass, getRenderPassState());
     return pass;
   };
