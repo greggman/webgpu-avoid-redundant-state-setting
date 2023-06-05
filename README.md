@@ -82,8 +82,7 @@ The states reset are the `bindGroups`, `vertexBuffers`, `indexBuffer`, and `pipe
 
 [Live Tests](https://greggman.github.io/webgpu-avoid-redundant-state-setting/test/).
 
-During dev, serve the repo as in `npx servez .` then open a page to [`http://locahost:8080/test/`](`http://locahost:8080/test/`).
->>>>>>> 0c148bc (add tests)
+During dev, serve the repo as in `npx servez .` then open a page to [`http://locahost:8080/test/`](http://locahost:8080/test/).
 
 ## License
 
