@@ -168,16 +168,13 @@ if (typeof GPUDevice !== 'undefined') {
   }
 
   function bindGroupSame(cachedBindGroup, bindGroup, dynamicOffsets, start, length) {
-    if (!cachedBindGroup || cachedBindGroup.bindGroup !== bindGroup || cachedBindGroup.length !== length) {
+    if (!cachedBindGroup || cachedBindGroup.bindGroup !== bindGroup) {
       return false;
     };
     if (!dynamicOffsets && !cachedBindGroup.dynamicOffsets) {
       return true;
     }
     const cachedDynamicOffsets = cachedBindGroup.dynamicOffsets;
-    if (Array.isArray(dynamicOffsets) !== Array.isArray(cachedDynamicOffsets)) {
-      return false;
-    }
     ASSERT(bindGroup[numDynamicOffsetsSym] !== undefined);
     length = getDynamicOffsetsLength(bindGroup, length)
     if (length !== cachedDynamicOffsets.length) {

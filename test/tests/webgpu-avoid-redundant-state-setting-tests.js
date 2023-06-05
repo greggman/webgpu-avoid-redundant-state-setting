@@ -43,13 +43,17 @@ describe('webgpu-avoid-redundant-state-setting', () => {
       { args: [0, bindGroup0], same: false },
       { args: [0, bindGroup0], same: true },
       { args: [0, bindGroup1], same: false },
-      { args: [0, dynamicBindGroup0, [0]], same: false, label: '0' },
-      { args: [0, dynamicBindGroup0, [0]], same: true, label: '1' },
-      { args: [0, dynamicBindGroup0, [256]], same: false},
-      { args: [0, dynamicBindGroup0, new Uint32Array([0]), 0, 1], same: false},
-      { args: [0, dynamicBindGroup0, new Uint32Array([256]), 0, 1], same: false},
-      { args: [0, dynamicBindGroup0, new Uint32Array([256]), 0, 1], same: true},
-      { args: [0, dynamicBindGroup0, new Uint32Array([128, 256]), 1, 1], same: true},
+      { args: [0, dynamicBindGroup0, [0, 0]], same: false, label: '0' },
+      { args: [0, dynamicBindGroup0, [0, 0]], same: true, label: '1' },
+      { args: [0, dynamicBindGroup0, [256, 0]], same: false},
+      { args: [0, dynamicBindGroup0, [0, 256]], same: false},
+      { args: [0, dynamicBindGroup0, new Uint32Array([0, 0]), 0, 2], same: false},
+      { args: [0, dynamicBindGroup0, new Uint32Array([256, 0]), 0, 2], same: false},
+      { args: [0, dynamicBindGroup0, new Uint32Array([256, 0]), 0, 2], same: true},
+      { args: [0, dynamicBindGroup0, new Uint32Array([128, 256, 0]), 1, 2], same: true},
+      { args: [0, dynamicBindGroup0, new Uint32Array([256, 0]), 0, 2], same: true},
+      { args: [0, dynamicBindGroup0, [256, 0]], same: true, label: 'from typedarray to native array' },
+      { args: [0, dynamicBindGroup0, new Uint32Array([123, 345, 256, 0]), 2, 2], same: true, label: 'from native array to typedarray array' },
     ];
     for (const {args, same, label} of tests) {
       pass.setBindGroup(...args);
@@ -72,13 +76,14 @@ describe('webgpu-avoid-redundant-state-setting', () => {
 
       before(() => {
         const shaderSrc = `
-          @group(0) @binding(0) var<storage, read_write> data: array<f32>;
+          @group(0) @binding(0) var<storage, read_write> data0: array<f32>;
+          @group(0) @binding(2) var<storage, read_write> data1: array<f32>;
 
           @compute @workgroup_size(1) fn computeSomething(
             @builtin(global_invocation_id) id: vec3<u32>
           ) {
-            let i = id.x;
-            data[i] = data[i] * 2.0;
+            _ = &data0;
+            _ = &data1;
           }
           `;
 
@@ -92,7 +97,11 @@ describe('webgpu-avoid-redundant-state-setting', () => {
         };
         pipeline0 = device.createComputePipeline(pipelineDesc);
         pipeline1 = device.createComputePipeline(pipelineDesc);
-        const storageBuffer = device.createBuffer({
+        const storageBuffer0 = device.createBuffer({
+          size: 1024,
+          usage: GPUBufferUsage.STORAGE,
+        });
+        const storageBuffer1 = device.createBuffer({
           size: 1024,
           usage: GPUBufferUsage.STORAGE,
         });
@@ -100,34 +109,39 @@ describe('webgpu-avoid-redundant-state-setting', () => {
           label: 'group0',
           layout: pipeline0.getBindGroupLayout(0),
           entries: [
-            { binding: 0, resource: { buffer: storageBuffer } },
+            { binding: 0, resource: { buffer: storageBuffer0 } },
+            { binding: 2, resource: { buffer: storageBuffer1 } },
           ],
         });
         bindGroup1 = device.createBindGroup({
           label: 'group1',
           layout: pipeline0.getBindGroupLayout(0),
           entries: [
-            { binding: 0, resource: { buffer: storageBuffer } },
+            { binding: 0, resource: { buffer: storageBuffer0 } },
+            { binding: 2, resource: { buffer: storageBuffer1 } },
           ],
         });
 
         const bindGroupLayout = device.createBindGroupLayout({
           entries: [
             { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage", hasDynamicOffset: true } },
+            { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage", hasDynamicOffset: true } },
           ],
         });
         dynamicBindGroup0 = device.createBindGroup({
           label: 'dynamicGroup0',
           layout: bindGroupLayout,
           entries: [
-            { binding: 0, resource: { buffer: storageBuffer, size: 512 } },
+            { binding: 0, resource: { buffer: storageBuffer0, size: 512 } },
+            { binding: 2, resource: { buffer: storageBuffer1, size: 512 } },
           ],
         });
         dynamicBindGroup0 = device.createBindGroup({
           label: 'dynamicGroup1',
           layout: bindGroupLayout,
           entries: [
-            { binding: 0, resource: { buffer: storageBuffer, size: 512 } },
+            { binding: 0, resource: { buffer: storageBuffer0, size: 512 } },
+            { binding: 2, resource: { buffer: storageBuffer1, size: 512 } },
           ],
         });
 
@@ -169,11 +183,14 @@ describe('webgpu-avoid-redundant-state-setting', () => {
 
       before(() => {
         const shaderSrc = `
-          struct VSUniforms {
+          struct VSUniforms0 {
             worldViewProjection: mat4x4<f32>,
+          };
+          struct VSUniforms1 {
             worldInverseTranspose: mat4x4<f32>,
           };
-          @group(0) @binding(0) var<uniform> vsUniforms: VSUniforms;
+          @group(0) @binding(0) var<uniform> vsUniforms0: VSUniforms0;
+          @group(0) @binding(2) var<uniform> vsUniforms1: VSUniforms1;
 
           struct MyVSInput {
               @location(0) position: vec4<f32>,
@@ -190,8 +207,8 @@ describe('webgpu-avoid-redundant-state-setting', () => {
           @vertex
           fn myVSMain(v: MyVSInput) -> MyVSOutput {
             var vsOut: MyVSOutput;
-            vsOut.position = vsUniforms.worldViewProjection * v.position;
-            vsOut.normal = (vsUniforms.worldInverseTranspose * vec4<f32>(v.normal, 0.0)).xyz;
+            vsOut.position = vsUniforms0.worldViewProjection * v.position;
+            vsOut.normal = (vsUniforms1.worldInverseTranspose * vec4<f32>(v.normal, 0.0)).xyz;
             vsOut.texcoord = v.texcoord;
             return vsOut;
           }
@@ -223,7 +240,11 @@ describe('webgpu-avoid-redundant-state-setting', () => {
         pipeline0 = device.createRenderPipeline(pipelineDesc);
         pipeline1 = device.createRenderPipeline(pipelineDesc);
 
-        const vsUniformBuffer = device.createBuffer({
+        const vsUniformBuffer0 = device.createBuffer({
+          size: 1024,
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+        const vsUniformBuffer1 = device.createBuffer({
           size: 1024,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
@@ -232,34 +253,39 @@ describe('webgpu-avoid-redundant-state-setting', () => {
           label: 'group0',
           layout: pipeline0.getBindGroupLayout(0),
           entries: [
-            { binding: 0, resource: { buffer: vsUniformBuffer } },
+            { binding: 0, resource: { buffer: vsUniformBuffer0 } },
+            { binding: 2, resource: { buffer: vsUniformBuffer1 } },
           ],
         });
         bindGroup1 = device.createBindGroup({
           label: 'group1',
           layout: pipeline0.getBindGroupLayout(0),
           entries: [
-            { binding: 0, resource: { buffer: vsUniformBuffer } },
+            { binding: 0, resource: { buffer: vsUniformBuffer0 } },
+            { binding: 2, resource: { buffer: vsUniformBuffer1 } },
           ],
         });
 
         const bindGroupLayout = device.createBindGroupLayout({
           entries: [
             { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform", hasDynamicOffset: true } },
+            { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform", hasDynamicOffset: true } },
           ],
         });
         dynamicBindGroup0 = device.createBindGroup({
           label: 'dynamicGroup0',
           layout: bindGroupLayout,
           entries: [
-            { binding: 0, resource: { buffer: vsUniformBuffer, size: 512 } },
+            { binding: 0, resource: { buffer: vsUniformBuffer0, size: 512 } },
+            { binding: 2, resource: { buffer: vsUniformBuffer1, size: 512 } },
           ],
         });
         dynamicBindGroup0 = device.createBindGroup({
           label: 'dynamicGroup1',
           layout: bindGroupLayout,
           entries: [
-            { binding: 0, resource: { buffer: vsUniformBuffer, size: 512 } },
+            { binding: 0, resource: { buffer: vsUniformBuffer0, size: 512 } },
+            { binding: 2, resource: { buffer: vsUniformBuffer1, size: 512 } },
           ],
         });
 
