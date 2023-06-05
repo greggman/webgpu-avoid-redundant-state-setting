@@ -168,7 +168,7 @@ if (typeof GPUDevice !== 'undefined') {
   }
 
   function bindGroupSame(cachedBindGroup, bindGroup, dynamicOffsets, start, length) {
-    if (!cachedBindGroup || cachedBindGroup.bindGroup !== bindGroup || cachedBindGroup.start !== start || cachedBindGroup.length !== length) {
+    if (!cachedBindGroup || cachedBindGroup.bindGroup !== bindGroup || cachedBindGroup.length !== length) {
       return false;
     };
     if (!dynamicOffsets && !cachedBindGroup.dynamicOffsets) {
@@ -183,6 +183,7 @@ if (typeof GPUDevice !== 'undefined') {
     if (length !== cachedDynamicOffsets.length) {
       return false;
     }
+    start = start || 0;
     for (let i = 0; i < length; ++i) {
       if (dynamicOffsets[start + i] !== cachedDynamicOffsets[i]) {
         return false;

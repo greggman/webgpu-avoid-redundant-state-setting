@@ -2,7 +2,6 @@ import {getAndResetRedundantCallInfo} from '../../webgpu-avoid-redundant-state-s
 
 import {
   assertEqual,
-  assertInstanceOf,
   assertTruthy,
 } from '../assert.js';
 
@@ -39,16 +38,23 @@ describe('webgpu-avoid-redundant-state-setting', () => {
     }
   }
 
-  function testSetBindGroup(pass, bindGroup0, bindGroup1) {
+  function testSetBindGroup(pass, bindGroup0, bindGroup1, dynamicBindGroup0, dynamicBindGroup1) {
     const tests = [
       { args: [0, bindGroup0], same: false },
       { args: [0, bindGroup0], same: true },
       { args: [0, bindGroup1], same: false },
+      { args: [0, dynamicBindGroup0, [0]], same: false, label: '0' },
+      { args: [0, dynamicBindGroup0, [0]], same: true, label: '1' },
+      { args: [0, dynamicBindGroup0, [256]], same: false},
+      { args: [0, dynamicBindGroup0, new Uint32Array([0]), 0, 1], same: false},
+      { args: [0, dynamicBindGroup0, new Uint32Array([256]), 0, 1], same: false},
+      { args: [0, dynamicBindGroup0, new Uint32Array([256]), 0, 1], same: true},
+      { args: [0, dynamicBindGroup0, new Uint32Array([128, 256]), 1, 1], same: true},
     ];
-    for (const {args, same} of tests) {
+    for (const {args, same, label} of tests) {
       pass.setBindGroup(...args);
       const info = getAndResetRedundantCallInfo();
-      assertEqual(info.setBindGroup, same ? 1 : 0, `setBindGroup: ${args.join(', ')}`);
+      assertEqual(info.setBindGroup, same ? 1 : 0, `setBindGroup: ${args.join(', ')} label: ${label}`);
     }    
   }
 
@@ -61,6 +67,8 @@ describe('webgpu-avoid-redundant-state-setting', () => {
       let pipeline1;
       let bindGroup0;
       let bindGroup1;
+      let dynamicBindGroup0;
+      let dynamicBindGroup1;
 
       before(() => {
         const shaderSrc = `
@@ -85,19 +93,41 @@ describe('webgpu-avoid-redundant-state-setting', () => {
         pipeline0 = device.createComputePipeline(pipelineDesc);
         pipeline1 = device.createComputePipeline(pipelineDesc);
         const storageBuffer = device.createBuffer({
-          size: 128,
+          size: 1024,
           usage: GPUBufferUsage.STORAGE,
         });
         bindGroup0 = device.createBindGroup({
+          label: 'group0',
           layout: pipeline0.getBindGroupLayout(0),
           entries: [
             { binding: 0, resource: { buffer: storageBuffer } },
           ],
         });
         bindGroup1 = device.createBindGroup({
+          label: 'group1',
           layout: pipeline0.getBindGroupLayout(0),
           entries: [
             { binding: 0, resource: { buffer: storageBuffer } },
+          ],
+        });
+
+        const bindGroupLayout = device.createBindGroupLayout({
+          entries: [
+            { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage", hasDynamicOffset: true } },
+          ],
+        });
+        dynamicBindGroup0 = device.createBindGroup({
+          label: 'dynamicGroup0',
+          layout: bindGroupLayout,
+          entries: [
+            { binding: 0, resource: { buffer: storageBuffer, size: 512 } },
+          ],
+        });
+        dynamicBindGroup0 = device.createBindGroup({
+          label: 'dynamicGroup1',
+          layout: bindGroupLayout,
+          entries: [
+            { binding: 0, resource: { buffer: storageBuffer, size: 512 } },
           ],
         });
 
@@ -117,7 +147,7 @@ describe('webgpu-avoid-redundant-state-setting', () => {
       });
 
       it('setBindGroup', () => {
-        testSetBindGroup(pass, bindGroup0, bindGroup1)
+        testSetBindGroup(pass, bindGroup0, bindGroup1, dynamicBindGroup0, dynamicBindGroup1);
       });
 
     });
@@ -130,6 +160,8 @@ describe('webgpu-avoid-redundant-state-setting', () => {
       let pipeline1;
       let bindGroup0;
       let bindGroup1;
+      let dynamicBindGroup0;
+      let dynamicBindGroup1;
       let vertexBuffer0;
       let vertexBuffer1;
       let indexBuffer0;
@@ -190,21 +222,44 @@ describe('webgpu-avoid-redundant-state-setting', () => {
         };
         pipeline0 = device.createRenderPipeline(pipelineDesc);
         pipeline1 = device.createRenderPipeline(pipelineDesc);
-        const vUniformBufferSize = 2 * 16 * 4; // 2 mat4s * 16 floats per mat * 4 bytes per float
+
         const vsUniformBuffer = device.createBuffer({
-          size: vUniformBufferSize,
+          size: 1024,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
+
         bindGroup0 = device.createBindGroup({
+          label: 'group0',
           layout: pipeline0.getBindGroupLayout(0),
           entries: [
             { binding: 0, resource: { buffer: vsUniformBuffer } },
           ],
         });
         bindGroup1 = device.createBindGroup({
+          label: 'group1',
           layout: pipeline0.getBindGroupLayout(0),
           entries: [
             { binding: 0, resource: { buffer: vsUniformBuffer } },
+          ],
+        });
+
+        const bindGroupLayout = device.createBindGroupLayout({
+          entries: [
+            { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform", hasDynamicOffset: true } },
+          ],
+        });
+        dynamicBindGroup0 = device.createBindGroup({
+          label: 'dynamicGroup0',
+          layout: bindGroupLayout,
+          entries: [
+            { binding: 0, resource: { buffer: vsUniformBuffer, size: 512 } },
+          ],
+        });
+        dynamicBindGroup0 = device.createBindGroup({
+          label: 'dynamicGroup1',
+          layout: bindGroupLayout,
+          entries: [
+            { binding: 0, resource: { buffer: vsUniformBuffer, size: 512 } },
           ],
         });
 
@@ -245,7 +300,7 @@ describe('webgpu-avoid-redundant-state-setting', () => {
       });
 
       it('setBindGroup', () => {
-        testSetBindGroup(pass, bindGroup0, bindGroup1)
+        testSetBindGroup(pass, bindGroup0, bindGroup1, dynamicBindGroup0, dynamicBindGroup1);
       });
 
       it('setVertexBuffer', () => {
