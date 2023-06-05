@@ -178,7 +178,7 @@ if (typeof GPUDevice !== 'undefined') {
     if (Array.isArray(dynamicOffsets) !== Array.isArray(cachedDynamicOffsets)) {
       return false;
     }
-    ASSERT(bindGroup.numDynamicOffsets !== undefined);
+    ASSERT(bindGroup[numDynamicOffsetsSym] !== undefined);
     length = getDynamicOffsetsLength(bindGroup, length)
     if (length !== cachedDynamicOffsets.length) {
       return false;
