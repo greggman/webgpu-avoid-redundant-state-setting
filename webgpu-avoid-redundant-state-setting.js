@@ -42,8 +42,8 @@ export function getAndResetRedundantCallInfo() {
 if (typeof GPUDevice !== 'undefined') {
 
   // Is this premature optimization?
-  const freeRenderPassState = [];
-  const renderPassToStateMap = new Map();
+  const freePassEncoderState = [];
+  const passEncoderToStateMap = new Map();
   const bindGroupLayoutToNumDynamicOffsetsMap = new WeakMap();
   const numDynamicOffsetsSym = Symbol('numDynamicOffsets');
 
@@ -80,11 +80,11 @@ if (typeof GPUDevice !== 'undefined') {
        : [c.r, c.g, c.b, c.a];
   }
 
-  function getRenderPassState() {
-    if (freeRenderPassState.length === 0) {
-      freeRenderPassState.push(new RenderPassState());
+  function getPassEncoderState() {
+    if (freePassEncoderState.length === 0) {
+      freePassEncoderState.push(new RenderPassState());
     }
-    return freeRenderPassState.pop().reset();
+    return freePassEncoderState.pop().reset();
   }
 
   function arrayEquals(a, b) {
@@ -103,20 +103,28 @@ if (typeof GPUDevice !== 'undefined') {
     ctor.prototype[name] = fn(ctor.prototype[name]);
   }
 
+  wrapFn(GPUCommandEncoder, 'beginComputePass', function(origFn) {
+    return function(...args) {
+      const pass = origFn.call(this, ...args);
+      passEncoderToStateMap.set(pass, getPassEncoderState());
+      return pass;
+    };
+  })
+
   wrapFn(GPUCommandEncoder, 'beginRenderPass', function(origFn) {
     return function(...args) {
       const pass = origFn.call(this, ...args);
       // TODO: We should try to set viewport and scissor from colorAttachments/depthStencilAttachment
       // but those only have textureViews and so we'd need to keep a map of views to textures.
       // I expect viewport and scissor are not set often so this seems overkill.
-      renderPassToStateMap.set(pass, getRenderPassState());
+      passEncoderToStateMap.set(pass, getPassEncoderState());
       return pass;
     };
   })
 
   wrapFn(GPUCommandEncoder, 'executeBundles', function(origFn) {
     return function(...args) {
-      renderPassToStateMap.get(this).resetForExecuteBundles();
+      passEncoderToStateMap.get(this).resetForExecuteBundles();
       origFn.call(this, ...args);
     };
   });
@@ -194,10 +202,24 @@ if (typeof GPUDevice !== 'undefined') {
     return offsets;
   }
 
-  wrapFn(GPURenderPassEncoder, 'setBindGroup', function(origFn) {
+  const setPipelineWrapper = function(origFn) {
+    return function(pipeline) {
+      const state = passEncoderToStateMap.get(this);
+      if (state.currentPipeline !== pipeline) {
+        state.currentPipeline = pipeline;
+        origFn.call(this, pipeline);
+      } else {
+        ++redundantCalls.setPipeline;
+      }
+    };
+  };
+  wrapFn(GPURenderPassEncoder, 'setPipeline', setPipelineWrapper);
+  wrapFn(GPUComputePassEncoder, 'setPipeline', setPipelineWrapper);
+
+  const setBindGroupWrapper = function(origFn) {
     return function(ndx, ...args) {
       const [bindGroup, dynamicOffsets, start, length] = args;
-      const {bindGroupState} = renderPassToStateMap.get(this);
+      const {bindGroupState} = passEncoderToStateMap.get(this);
       if (!bindGroupSame(bindGroupState[ndx], bindGroup, dynamicOffsets, start, length)) {
         bindGroupState[ndx] = {bindGroup, dynamicOffsets: dupOffsets(dynamicOffsets, start, length, bindGroup), start, length};
         origFn.call(this, ndx, ...args);
@@ -205,11 +227,13 @@ if (typeof GPUDevice !== 'undefined') {
         ++redundantCalls.setBindGroup;
       }
     };
-  });
+  }
+  wrapFn(GPURenderPassEncoder, 'setBindGroup', setBindGroupWrapper);
+  wrapFn(GPUComputePassEncoder, 'setBindGroup', setBindGroupWrapper);
 
   wrapFn(GPURenderPassEncoder, 'setViewport', function(origFn) {
     return function(...args) {
-      const state = renderPassToStateMap.get(this);
+      const state = passEncoderToStateMap.get(this);
       if (!arrayEquals(state.viewport, args)) {
         state.viewport = args.slice();
         origFn.call(this, ...args);
@@ -221,7 +245,7 @@ if (typeof GPUDevice !== 'undefined') {
 
   wrapFn(GPURenderPassEncoder, 'setScissorRect', function(origFn) {
     return function(...args) {
-      const state = renderPassToStateMap.get(this);
+      const state = passEncoderToStateMap.get(this);
       if (!arrayEquals(state.scissor, args)) {
         state.scissor = args.slice();
         origFn.call(this, ...args);
@@ -233,7 +257,7 @@ if (typeof GPUDevice !== 'undefined') {
 
   wrapFn(GPURenderPassEncoder, 'setBlendConstant', function(origFn) {
     return function(newColor) {
-      const state = renderPassToStateMap.get(this);
+      const state = passEncoderToStateMap.get(this);
       const color = normalizeColor(newColor);
       if (!arrayEquals(state.blendConstant, color)) {
         state.blendConstant = color.slice();
@@ -246,24 +270,12 @@ if (typeof GPUDevice !== 'undefined') {
 
   wrapFn(GPURenderPassEncoder, 'setStencilReference', function(origFn) {
     return function(newRef) {
-      const state = renderPassToStateMap.get(this);
+      const state = passEncoderToStateMap.get(this);
       if (state.stencilReference !== newRef) {
         state.stencilReference = newRef;
         origFn.call(this, newRef);
       } else {
         ++redundantCalls.setStencilReference;
-      }
-    };
-  });
-
-  wrapFn(GPURenderPassEncoder, 'setPipeline', function(origFn) {
-    return function(pipeline) {
-      const state = renderPassToStateMap.get(this);
-      if (state.currentPipeline !== pipeline) {
-        state.currentPipeline = pipeline;
-        origFn.call(this, pipeline);
-      } else {
-        ++redundantCalls.setPipeline;
       }
     };
   });
@@ -275,7 +287,7 @@ if (typeof GPUDevice !== 'undefined') {
   wrapFn(GPURenderPassEncoder, 'setVertexBuffer', function(origFn) {
     return function(ndx, ...args) {
       const [buffer, offset, size] = args;
-      const {vertexState} = renderPassToStateMap.get(this);
+      const {vertexState} = passEncoderToStateMap.get(this);
       if (!vertexBufferSame(vertexState[ndx], buffer, offset, size)) {
         vertexState[ndx] = {buffer, offset: offset || 0, size: size === undefined ? buffer.size : size};
         origFn.call(this, ndx, ...args);
@@ -288,7 +300,7 @@ if (typeof GPUDevice !== 'undefined') {
   wrapFn(GPURenderPassEncoder, 'setIndexBuffer', function(origFn) {
     return function(...args) {
       let [buffer, format, offset, size] = args;
-      const {indexState} = renderPassToStateMap.get(this);
+      const {indexState} = passEncoderToStateMap.get(this);
       offset = offset || 0;
       size = size === undefined
          ? buffer.size - offset
@@ -308,13 +320,15 @@ if (typeof GPUDevice !== 'undefined') {
     };
   });
 
-  wrapFn(GPURenderPassEncoder, 'end', function(origFn) {
+  const endWrapper = function(origFn) {
     return function(...args) {
-      const state = renderPassToStateMap.get(this);
-      renderPassToStateMap.delete(this);
-      freeRenderPassState.push(state.reset());
+      const state = passEncoderToStateMap.get(this);
+      passEncoderToStateMap.delete(this);
+      freePassEncoderState.push(state.reset());
       return origFn.call(this, ...args);
     };
-  });
+  };
+  wrapFn(GPURenderPassEncoder, 'end', endWrapper);
+  wrapFn(GPUComputePassEncoder, 'end', endWrapper);
 
 }
