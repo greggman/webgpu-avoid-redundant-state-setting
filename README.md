@@ -48,8 +48,42 @@ So, this is an attempt at
    Note: this assumes you're using `requestAnimationFrame` to render
 
    If you see lots of redundant state setting, refactor your code to avoid it. You can look at the source code of this library
-   for some ideas. The easist to avoid are redundant `setVertexBuffer` and `setIndexBuffer` calls. `setBindGroup` is harder
-   if it has to check dynamic offests.
+   for some ideas. The easiest to avoid are redundant `setVertexBuffer` and `setIndexBuffer` calls. `setBindGroup` is harder
+   if it has to check dynamic offsets.
+
+   ## Important!
+
+   You do NOT need to avoid setting all redundant state. Rather, this library is just meant to check
+   if you're setting 100s or 1000s of redundant state per pass.
+
+## Notes
+
+There isn't very much state in WebGPU. The most (all?) state comes in `GPURenderPassEncoder` and `GPUComputePassEncoder`.
+For example, you set bindGroups by calling `setBindGroup` and those are sticky until you `end` the pass encoder. 
+
+* compute and render pass state
+
+  * pipeline: set via `setPipeline`
+  * bindGroups:   set via `setBindGroup`
+
+* render pass state
+
+  * vertexBuffers: set via `setVertexBuffer`
+  * indexBuffer: set via `setIndexBuffer`
+  * viewport: set via `setViewport`
+  * scissor: set via `setScissor`
+  * blendConstant: set via `setBlendConstant`
+  * stencilReference: set via `setStencilReference`
+
+The one exception is in a render pass, `executeBundles` resets some of the state, both before and after.
+The states reset are the `bindGroups`, `vertexBuffers`, `indexBuffer`, and `pipeline`.
+
+## Testing
+
+[Live Tests](https://greggman.github.io/webgpu-avoid-redundant-state-setting/test/).
+
+During dev, serve the repo as in `npx servez .` then open a page to [`http://locahost:8080/test/`](`http://locahost:8080/test/`).
+>>>>>>> 0c148bc (add tests)
 
 ## License
 
