@@ -45,7 +45,10 @@ So, this is an attempt at
 
    Then check the JavaScript console.
 
-   Note: this assumes you're using `requestAnimationFrame` to render
+   Note: this assumes you're using `requestAnimationFrame` to render. If you are using something else to render
+   like `requestVideoFrameCallback` or `setTimeout` or other events,
+   [look at the source](https://github.com/greggman/webgpu-avoid-redundant-state-setting/blob/main/webgpu-check-redundant-state-setting.js)
+   to see how to do this check for your specific situation.
 
    If you see lots of redundant state setting, refactor your code to avoid it. You can look at the source code of this library
    for some ideas. The easiest to avoid are redundant `setVertexBuffer` and `setIndexBuffer` calls. `setBindGroup` is harder
