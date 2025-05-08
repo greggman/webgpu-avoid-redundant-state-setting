@@ -4,6 +4,7 @@
   "description": "check for and/or avoid redundant state setting in WebGPU",
   "main": "webgpu-avoid-redundant-state-setting.js",
   "module": "webgpu-avoid-redundant-state-setting.js",
+  "types": "types.d.ts",
   "type": "module",
   "directories": {
     "test": "test"
@@ -13,7 +14,7 @@
     "check-ci": "npm run pre-push",
     "lint": "eslint \"src/**/*.{js}\"",
     "pre-push": "npm run lint && npm run test",
-    "test": "echo \"need to wait for puppeteer to support WebGPU or make a mock WebGPU impl\""
+    "test": "node puppeteer.js"
   },
   "repository": {
     "type": "git",
